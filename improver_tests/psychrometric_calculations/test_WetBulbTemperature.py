@@ -40,7 +40,6 @@ from iris.tests import IrisTest
 
 from improver.psychrometric_calculations.psychrometric_calculations import (
     WetBulbTemperature)
-from improver.utilities.warnings_handler import ManageWarnings
 
 from ..set_up_test_cubes import set_up_variable_cube
 
