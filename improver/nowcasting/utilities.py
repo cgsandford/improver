@@ -171,7 +171,9 @@ class FillRadarHoles(BasePlugin):
 
         for row_ind, col_ind, data_win, mask_win in zip(*indices, data, mask):
             valid_points = data_win[np.where(mask_win == 0)]
-            mean = np.mean(np.where(valid_points > min_rr_mmh, np.log10(v), np.nan))
+            mean = np.mean(
+                np.where(valid_points > min_rr_mmh, np.log10(valid_points), np.nan)
+            )
             if np.isnan(mean):
                 cube_new.data[row_ind, col_ind] = 0
             else:
