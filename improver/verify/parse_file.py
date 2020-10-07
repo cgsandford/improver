@@ -5,7 +5,14 @@ import os.path as pth
 
 def get_model(filename):
     """Get string model identifier from filename"""
-    return pth.basename(filename)[7:-11]
+    basename = pth.basename(filename)
+    end = basename.rfind('counts')
+    string_name = basename[7:end-1]
+    if len(string_name) < 6:
+        string_name = string_name.upper()
+    else:
+        string_name = string_name.replace('_', ' ').capitalize()
+    return string_name
 
 
 def set_basename(infiles, stat, thresh=None, single_model=True,
