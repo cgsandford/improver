@@ -316,7 +316,7 @@ class SkillCrossover:
                 crossover_time.append(t_cross)
                 crossover_csi.append(csi_cross)
 
-        return (nwet, pwet, crossover_time, crossover_csi)
+        return (np.array(nwet), np.array(pwet), np.array(crossover_time), np.array(crossover_csi))
 
 
 

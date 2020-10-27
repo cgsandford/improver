@@ -44,6 +44,16 @@ def main(infiles, plotdir, startdate, enddate):
         title=plottitle, savepath=os.path.join(plotdir, plotname)
     )
 
+    """
+    _, pwet, crossover_time, crossover_csi = crossover.calculate_crossovers(zero_threshold=True)
+    plottitle = f'{crossover.nowcast} CSI crossover: rain / no rain threshold'
+    plotname = f'{start}-{end}_{crossover.nowcast}_zero_filtered.png'.replace(' ', '_')
+    plot_crossover_with_coverage(
+        pwet, crossover_time, crossover_csi, 0.7, cmin=0.1,
+        title=plottitle, savepath=os.path.join(plotdir, plotname)
+    )
+    """
+
     _, pwet, crossover_time, crossover_csi = crossover.calculate_crossovers(zero_threshold=False)
     plottitle = f'{crossover.nowcast} CSI crossover: 1 mm/h'
     plotname = f'{start}-{end}_{crossover.nowcast}_1mmh.png'.replace(' ', '_')

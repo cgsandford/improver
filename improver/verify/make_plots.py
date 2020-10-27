@@ -38,13 +38,16 @@ def plot_by_threshold(stats_dicts, stat, thresh, outname):
     plt.savefig(outname)
 
 
-def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, title=None, savepath=None):
+def plot_crossover_with_coverage(
+        pwet, ctime, ccsi, cmax, cmin=0.0, title=None, savepath=None
+):
     """Plot crossover skill with amount of rain in original image"""
     plt.figure(figsize=(8, 6))
     ax = plt.subplot(111)
 
     ax.axhline(y=150, color='black', linestyle='dashed')
-    plt.scatter(pwet, ctime, c=ccsi, vmax=cmax)
+    plt.scatter(pwet[ccsi >= cmin], ctime[ccsi >= cmin], c=ccsi[ccsi >= cmin],
+                vmin=0.0, vmax=cmax)
     plt.colorbar(ticks=np.arange(0, cmax+0.1, 0.1))
 
     plt.ylim(40, 400)
