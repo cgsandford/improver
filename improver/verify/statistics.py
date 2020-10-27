@@ -111,6 +111,7 @@ class SkillCrossover:
                 while line:
                     cycle, lt, thresh, hits, misses, false, no_det = format_line(line)
                     day = int(cycle[:8])
+                    # TODO these are validity not cycle times - need to recalculate cycle time
                     # read only hourly cycles
                     if day >= startdate and day <= enddate and self._is_hourly(cycle):
                         # initialise dictionary item for this cycle

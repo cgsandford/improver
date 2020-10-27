@@ -85,6 +85,10 @@ def process(
     obs_time = obs.coord("time").cell(0).point
     cycletime = datetime_to_cycletime(obs_time)
 
+    # BUG didn't check the obs were actually obs ... duplicate lines in UKV counts
+    # where obs were not available, UKV verifying against UKV analysis from
+    # the previous hourly cycle?  Or something like that...
+
     lines = []
     for fcst_list in fcsts:
         try:

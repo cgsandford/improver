@@ -32,7 +32,6 @@ def main(infiles, plotdir, startdate, enddate):
     if end is None:
         end = 20200731
 
-
     data = SkillCrossover(infiles, start, end, verbose_read=False)
 
     nwet, pwet, crossover_time, crossover_csi = data.calculate_crossovers()
