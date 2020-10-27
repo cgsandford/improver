@@ -4,6 +4,7 @@ import os
 from matplotlib import pyplot as plt
 
 from improver.verify.statistics import SkillCrossover
+from improver.verify.make_plots import plot_crossover_with_coverage
 
 
 def main(infiles, plotdir, startdate, enddate):
@@ -12,7 +13,8 @@ def main(infiles, plotdir, startdate, enddate):
 
     YYYYMMDDTHHmmZ lead_time_mins threshold_mmh hits misses false_alarms no_det
 
-    Calculate binary statistics (POD, FAR, CSI), and plot with lead time
+    Calculate point at which nowcast skill matches UKV as a function of "wet pixels"
+    in inputs.
 
     Args:
         infiles (list of str):
@@ -32,16 +34,23 @@ def main(infiles, plotdir, startdate, enddate):
     if end is None:
         end = 20200731
 
-    data = SkillCrossover(infiles, start, end, verbose_read=False)
+    crossover = SkillCrossover(infiles, start, end, verbose_read=False)
 
-    nwet, pwet, crossover_time, crossover_csi = data.calculate_crossovers()
+    _, pwet, crossover_time, crossover_csi = crossover.calculate_crossovers(zero_threshold=True)
+    plottitle = f'{crossover.nowcast} CSI crossover: rain / no rain threshold'
+    plotname = f'{start}-{end}_{crossover.nowcast}_zero.png'.replace(' ', '_')
+    plot_crossover_with_coverage(
+        pwet, crossover_time, crossover_csi, 0.7,
+        title=plottitle, savepath=os.path.join(plotdir, plotname)
+    )
 
-    plt.scatter(nwet, crossover_time, c=crossover_csi)
-    plt.colorbar()
-    plt.ylim(40, 400)
-    plt.ylabel('Crossover time (mins)')
-    plt.show()
-
+    _, pwet, crossover_time, crossover_csi = crossover.calculate_crossovers(zero_threshold=False)
+    plottitle = f'{crossover.nowcast} CSI crossover: 1 mm/h'
+    plotname = f'{start}-{end}_{crossover.nowcast}_1mmh.png'.replace(' ', '_')
+    plot_crossover_with_coverage(
+        pwet, crossover_time, crossover_csi, 0.5, 
+        title=plottitle, savepath=os.path.join(plotdir, plotname)
+    )
 
 
 if __name__ == "__main__":

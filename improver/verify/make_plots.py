@@ -36,3 +36,29 @@ def plot_by_threshold(stats_dicts, stat, thresh, outname):
     plt.title('{} at {:.2f} mm/h'.format(stat, thresh))
     plt.tight_layout()
     plt.savefig(outname)
+
+
+def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, title=None, savepath=None):
+    """Plot crossover skill with amount of rain in original image"""
+    plt.figure(figsize=(8, 6))
+    ax = plt.subplot(111)
+
+    ax.axhline(y=150, color='black', linestyle='dashed')
+    plt.scatter(pwet, ctime, c=ccsi, vmax=cmax)
+    plt.colorbar(ticks=np.arange(0, cmax+0.1, 0.1))
+
+    plt.ylim(40, 400)
+    plt.ylabel('Crossover time (mins)')
+    plt.xlim(0, 0.6)
+    plt.xlabel('Proportion of "wet" pixels in T+0 radar')
+
+    plt.tight_layout()
+
+    if title is not None:
+        plt.title(title)
+
+    if savepath is not None:
+        plt.savefig(savepath)
+    else:
+        plt.show()
+

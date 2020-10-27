@@ -1,6 +1,9 @@
 """Module to calculate and plot binary statistics from counts"""
 
 import numpy as np
+from datetime import timedelta
+
+from improver.utilities.temporal import cycletime_to_datetime, datetime_to_cycletime
 from improver.verify.parse_file import format_line, get_model
 
 
@@ -106,12 +109,14 @@ class SkillCrossover:
                 nowcast = True
                 if self.nowcast is None:
                     self.nowcast = model
+
             with open(datafile) as dtf:
                 line = dtf.readline()
                 while line:
-                    cycle, lt, thresh, hits, misses, false, no_det = format_line(line)
+                    vt, lt, thresh, hits, misses, false, no_det = format_line(line)
+                    cycle = self._get_cycle(vt, lt)
                     day = int(cycle[:8])
-                    # TODO these are validity not cycle times - need to recalculate cycle time
+
                     # read only hourly cycles
                     if day >= startdate and day <= enddate and self._is_hourly(cycle):
                         # initialise dictionary item for this cycle
@@ -134,6 +139,14 @@ class SkillCrossover:
         print(f'Read {len(self.data)} cycles into dict')
         self._check_data()
         print(f'Retained {len(self.data)} cycles for analysis')
+
+
+    @staticmethod
+    def _get_cycle(vt, lt):
+        """Get forecast cycle that generated this line in YYYYMMDDTHHMMZ format"""
+        vt_datetime = cycletime_to_datetime(vt)
+        cycle_datetime = vt_datetime - timedelta(seconds=lt*60)
+        return datetime_to_cycletime(cycle_datetime)
 
     @staticmethod
     def _is_hourly(cycle):
@@ -159,7 +172,7 @@ class SkillCrossover:
 
     @staticmethod
     def _csi(hits, misses, false):
-        """Calculate CSI for this cycle and lead time"""
+        """Calculate CSI"""
         if float(hits + misses + false) > 0:
             return float(hits) / float(hits + misses + false)
         return np.nan
@@ -189,20 +202,27 @@ class SkillCrossover:
                             self.data[cycle][model], self.data[cycle][model].keys(), model_keys
                         )
                     )
-                lengths = [len(self.data[cycle][model][key]) for key in model_keys]
-                if len(np.unique(lengths)) != 1:
-                    raise ValueError(f'Unmatching lengths {lengths}')
 
-                # we expect 6+ hours of UKV cycles and 6x4 = 24 cycles for each nowcast - check
-                if ((model == 'UKV' and np.unique(lengths) < [6]) or
-                        (model == self.nowcast and np.unique(lengths) < [24])):
+                missing = self._check_leadtimes(
+                    model, self.data[cycle][model]['leadtimes']
+                )
+                if missing:
                     if self.verbose:
-                        print(f'{cycle} has unexpected {model} lead times '
-                              f'{self.data[cycle][model]["leadtimes"]} - marked cycle for removal')
+                        print(f'{cycle} {model} missing lead times {missing} '
+                              '- marked cycle for removal')
                     remove_cycles.append(cycle)
 
         for cycle in set(remove_cycles):
             self.data.pop(cycle)
+
+    def _check_leadtimes(self, model, leadtimes):
+        """Check for missing leadtimes"""
+        expected_leadtimes = {
+            'UKV': np.arange(60, 361, 60),
+            self.nowcast: np.arange(15, 361, 15)
+        }
+        missing_leadtimes = set(expected_leadtimes[model]) - set(leadtimes)
+        return missing_leadtimes
 
     def calculate_crossovers(self, zero_threshold=True):
         """From dictionary, calculate the crossover skill lead time and value for each
@@ -239,38 +259,51 @@ class SkillCrossover:
             ukv_csi = self.data[cycle]['UKV'][csi_index]
             ukv_dict = {lt: csi for lt, csi in zip(ukv_lt, ukv_csi)}
 
+            # exclude timeseries containing nans
+            if (np.nan in self.data[cycle][self.nowcast][csi_index] or
+                    np.nan in self.data[cycle]['UKV'][csi_index]):
+                continue
+
             # find first lead time at which UKV skill exceeds nowcast
             cross_found = False
-            for lt in ukv_lt[1:]:
+            for lt in ukv_lt:
                 if nc_dict[lt] <= ukv_dict[lt]:
+
+                    # if we hit at the first lead time, go back until we find a
+                    # nowcast with higher skill than the UKV at T+1
+                    if lt == 60:
+                        tcross = None
+                        for nclt in [45, 30, 15]:
+                            if nc_dict[nclt] > ukv_dict[60]:
+                                tcross = nclt
+                        if tcross is None:
+                            tcross = 15
+                        csi_cross = ukv_dict[60]
+                        cross_found = True
+                        break
+
                     # look back over the previous hour to pinpoint crossover
                     ukv0 = ukv_dict[lt-60]
                     ukv1 = ukv_dict[lt]
                     diff = ukv1 - ukv0
                     ukv_interp = []
+                    nc_interp = []
                     for i in range(5):
-                        # TODO skip nan values
                         ukv_interp.append(ukv0 + i*diff/4.)
-
-                    nc_interp = [
-                        nc_dict[lt-60], nc_dict[lt-45], nc_dict[lt-30], nc_dict[lt-15], nc_dict[lt]
-                    ]
+                        nc_interp.append(nc_dict[lt-(4-i)*15])
 
                     for i in range(4):
                         if nc_interp[i+1] <= ukv_interp[i+1]:
-                            if nc_interp[i] > ukv_interp[i]:
-                                # linear interp: nc_csi = at + b ; ukv_csi = ct + d
-                                a = (nc_interp[i+1] - nc_interp[i]) / 15.  # timestep
-                                b = nc_interp[i]
-                                c = (ukv_interp[i+1] - ukv_interp[i]) / 15.
-                                d = ukv_interp[i]
+                            # interpolate linearly over 15 minute timestep:
+                            # nc_csi = at + b ; ukv_csi = ct + d
+                            a = (nc_interp[i+1] - nc_interp[i]) / 15.
+                            b = nc_interp[i]
+                            c = (ukv_interp[i+1] - ukv_interp[i]) / 15.
+                            d = ukv_interp[i]
 
-                                dt_cross = (d - b) / (a - c)
-                                csi_cross = a*dt_cross + b
-                                t_cross = dt_cross + (lt - 60 + i*15)
-                            else:
-                                csi_cross = ukv_interp[i]
-                                t_cross = (lt - 60 + i*15)
+                            dt_cross = (d - b) / (a - c)
+                            csi_cross = a*dt_cross + b
+                            t_cross = dt_cross + (lt - 60 + i*15)
 
                             cross_found = True
                             break
