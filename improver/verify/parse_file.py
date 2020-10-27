@@ -47,8 +47,21 @@ def format_line(line):
     return ftline
 
 
-def read_count_files(infiles, startdate, enddate):
-    """Read input counts files
+def _add_to_counts(counts_by_leadtime, lt, thresh, hits, misses, false, no_det):
+    if lt not in counts_by_leadtime:
+        counts_by_leadtime[lt] = {}
+    if thresh not in counts_by_leadtime[lt]:
+        counts_by_leadtime[lt][thresh] = {}
+        for name in ['hits', 'misses', 'false', 'no_det']:
+            counts_by_leadtime[lt][thresh][name] = 0
+    counts_by_leadtime[lt][thresh]['hits'] += hits
+    counts_by_leadtime[lt][thresh]['misses'] += misses
+    counts_by_leadtime[lt][thresh]['false'] += false
+    counts_by_leadtime[lt][thresh]['no_det'] += no_det
+
+
+def accumulate_count_files(infiles, startdate, enddate):
+    """Accumulate input counts by lead time
 
     Args:
         infiles (list of str)
@@ -68,18 +81,10 @@ def read_count_files(infiles, startdate, enddate):
             while line:
                 dt, lt, thresh, hits, misses, false, no_det = format_line(line)
                 day = int(dt[:8])
-                if day > startdate and day < enddate:
-                    if lt not in counts_by_leadtime:
-                        counts_by_leadtime[lt] = {}
-                    if thresh not in counts_by_leadtime[lt]:
-                        counts_by_leadtime[lt][thresh] = {}
-                        for name in ['hits', 'misses', 'false', 'no_det']:
-                            counts_by_leadtime[lt][thresh][name] = 0
-                    counts_by_leadtime[lt][thresh]['hits'] += hits
-                    counts_by_leadtime[lt][thresh]['misses'] += misses
-                    counts_by_leadtime[lt][thresh]['false'] += false
-                    counts_by_leadtime[lt][thresh]['no_det'] += no_det
-
+                if day >= startdate and day <= enddate:
+                    _add_to_counts(
+                        counts_by_leadtime, lt, thresh, hits, misses, false, no_det
+                    )
                 line = dtf.readline()
 
     return counts_by_leadtime

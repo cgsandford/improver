@@ -1,8 +1,9 @@
 import argparse
 import os
 
-from improver.verify.parse_file import get_model, read_count_files, set_basename
-from improver.verify.statistics import StatsDict, plot_by_leadtime, plot_by_threshold
+from improver.verify.parse_file import get_model, accumulate_count_files, set_basename
+from improver.verify.statistics import StatsDict
+from improver.verify.make_plots import plot_by_leadtime, plot_by_threshold
 
 
 def main(infiles, plotdir, stats, thresholds, startdate, enddate):
@@ -46,7 +47,7 @@ def main(infiles, plotdir, stats, thresholds, startdate, enddate):
 
     stats_dicts = {}
     for name in file_lists:
-        counts_dict = read_count_files(file_lists[name], start, end)
+        counts_dict = accumulate_count_files(file_lists[name], start, end)
         stats_dicts[name] = StatsDict(counts_dict)
 
     for stat in stats:

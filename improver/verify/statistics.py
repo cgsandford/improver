@@ -1,7 +1,7 @@
 """Module to calculate and plot binary statistics from counts"""
 
 import numpy as np
-from matplotlib import pyplot as plt
+from improver.verify.parse_file import format_line, get_model
 
 
 def calc_stats(hits, misses, false, no_det):
@@ -77,36 +77,212 @@ class StatsDict:
         return self._sort_by_x(thresholds, skill)
 
 
-def plot_by_leadtime(stats_dict, stat, thresholds, outname):
-    """Plots statistic "stat" by lead time for a range of thresholds"""
-    plt.figure(figsize=(8, 6))
-    for thresh in thresholds:
-        leadtime, skill = stats_dict.trend_with_leadtime(thresh, stat)
-        plt.plot(leadtime, skill, label='{:.2f} mm/h'.format(thresh))
-    plt.legend()
-    plt.xlabel('Lead time (minutes)')
-    plt.xlim(left=0)
-    plt.xticks(np.arange(0, leadtime[-1]+1, 60))
-    plt.ylabel(stat)
-    plt.ylim(0, 1)
-    plt.title(f'{stat} with lead time')
-    plt.tight_layout()
-    plt.savefig(outname)
+class SkillCrossover:
+    """Deep dictionary containing trends of CSI with lead time for each model,
+    in order to calculate nowcast / UKV crossovers"""
+
+    def __init__(self, infiles, startdate, enddate, verbose_read=True):
+        """Read counts straight from files, retaining cycle association
+
+        Args:
+            infiles (list of str)
+            startdate (int)
+                Date in YYYYMMDD format, or 0
+            enddate (int)
+                Date in YYYYMMDD format
+            verbose_read (bool):
+                If True, print out reasons for removing certain cycles in
+                data checking
+        """
+        self.verbose = verbose_read
+        self.nowcast = None
+        self.data = {}
+        for datafile in infiles:
+            # find out which model this file is associated with
+            model = get_model(datafile)
+            print(f'Reading {model} data from {datafile}')
+            nowcast = False
+            if model != 'UKV':
+                nowcast = True
+                if self.nowcast is None:
+                    self.nowcast = model
+            with open(datafile) as dtf:
+                line = dtf.readline()
+                while line:
+                    cycle, lt, thresh, hits, misses, false, no_det = format_line(line)
+                    day = int(cycle[:8])
+                    # read only hourly cycles
+                    if day >= startdate and day <= enddate and self._is_hourly(cycle):
+                        # initialise dictionary item for this cycle
+                        self._initialise_cycle(cycle, model)
+
+                        # crude count of amount of rain in input radar using nowcast at 15 minutes
+                        if nowcast and lt == 15 and np.isclose(thresh, 0.03):
+                            self._wet_dry_count(cycle, hits, misses, false, no_det)
+                    
+                        # append data to lists (assumes thresholds complete and in ascending order)
+                        if np.isclose(thresh, 0.03):
+                            self.data[cycle][model]['leadtimes'].append(lt)
+                            self.data[cycle][model]['CSI_0'].append(self._csi(hits, misses, false))
+                        elif np.isclose(thresh, 1):
+                            self.data[cycle][model]['CSI_1'].append(self._csi(hits, misses, false))
+
+                    line = dtf.readline()
+
+        # check all entries in self.data have required info
+        print(f'Read {len(self.data)} cycles into dict')
+        self._check_data()
+        print(f'Retained {len(self.data)} cycles for analysis')
+
+    @staticmethod
+    def _is_hourly(cycle):
+        """Return True if cycletime is on-hour: YYYYMMDDTHHMMZ"""
+        if cycle[-3:] == "00Z":
+            return True
+        return False
+
+    def _initialise_cycle(self, cycle, model):
+        """Add new cycle and / or model to data dictionary"""
+        if cycle not in self.data:
+            self.data[cycle] = {}
+        if model not in self.data[cycle]:
+            self.data[cycle][model] = {'leadtimes': [], 'CSI_0': [], 'CSI_1': []}
+
+    def _wet_dry_count(self, cycle, hits, misses, false, no_det):
+        """Count number of wet and dry pixels in initialising radar image"""
+        if 'wet_pixels' in self.data[cycle]:
+            raise UserWarning(f'Wet / dry counts already defined for {cycle}')
+        else:
+            self.data[cycle]['wet_pixels'] = hits + misses
+            self.data[cycle]['dry_pixels'] = false + no_det
+
+    @staticmethod
+    def _csi(hits, misses, false):
+        """Calculate CSI for this cycle and lead time"""
+        if float(hits + misses + false) > 0:
+            return float(hits) / float(hits + misses + false)
+        return np.nan
+
+    def _check_data(self):
+        """Validate each entry in data dict"""
+
+        def unexpected_keys(item, keys, expected):
+            return f'{item} has {keys}, expected {expected}'
+
+        expected_keys = {'wet_pixels', 'dry_pixels', 'UKV', self.nowcast}
+        model_keys = {'leadtimes', 'CSI_0', 'CSI_1'}
+        remove_cycles = []
+
+        for cycle in self.data:
+            if self.data[cycle].keys() != expected_keys:
+                if self.verbose:
+                    print(unexpected_keys(cycle, self.data[cycle].keys(), expected_keys),
+                          '- marked cycle for removal')
+                remove_cycles.append(cycle)
+                continue
+
+            for model in ['UKV', self.nowcast]:
+                if self.data[cycle][model].keys() != model_keys:
+                    raise ValueError(
+                        unexpected_keys(
+                            self.data[cycle][model], self.data[cycle][model].keys(), model_keys
+                        )
+                    )
+                lengths = [len(self.data[cycle][model][key]) for key in model_keys]
+                if len(np.unique(lengths)) != 1:
+                    raise ValueError(f'Unmatching lengths {lengths}')
+
+                # we expect 6+ hours of UKV cycles and 6x4 = 24 cycles for each nowcast - check
+                if ((model == 'UKV' and np.unique(lengths) < [6]) or
+                        (model == self.nowcast and np.unique(lengths) < [24])):
+                    if self.verbose:
+                        print(f'{cycle} has unexpected {model} lead times '
+                              f'{self.data[cycle][model]["leadtimes"]} - marked cycle for removal')
+                    remove_cycles.append(cycle)
+
+        for cycle in set(remove_cycles):
+            self.data.pop(cycle)
+
+    def calculate_crossovers(self, zero_threshold=True):
+        """From dictionary, calculate the crossover skill lead time and value for each
+        cycle.  If CSI is invalid, filter out.
+
+        Returns:
+            nwet (list of int):
+                Number of wet pixels in input radar image
+            pwet (list of float):
+                Proportion of wet pixels in input radar image (range 0-1)
+            crossover_time (list of float):
+                Interpolated time at which nowcast skill dips below UKV, in minutes
+            crossover_csi (list of float):
+                Interpolated CSI at which nowcast skill dips below UKV.  If any of
+                the input CSI values are invalid, meaning this crossover cannot be
+                calculated, no entry is returned.  This filters out "no rain" cases.
+            zero_threshold (bool):
+                If True, calculate crossover time and CSI for the "zero" (0.03 mm/h)
+                threshold.  If False, calculate for 1 mm/h.
+        """
+        nwet = []
+        pwet = []
+        crossover_time = []
+        crossover_csi = []
+
+        for cycle in self.data:
+            csi_index = 'CSI_0' if zero_threshold else 'CSI_1'
+
+            nc_lt = self.data[cycle][self.nowcast]['leadtimes']
+            nc_csi = self.data[cycle][self.nowcast][csi_index]
+            nc_dict = {lt: csi for lt, csi in zip(nc_lt, nc_csi)}
+
+            ukv_lt = self.data[cycle]['UKV']['leadtimes']
+            ukv_csi = self.data[cycle]['UKV'][csi_index]
+            ukv_dict = {lt: csi for lt, csi in zip(ukv_lt, ukv_csi)}
+
+            # find first lead time at which UKV skill exceeds nowcast
+            cross_found = False
+            for lt in ukv_lt[1:]:
+                if nc_dict[lt] <= ukv_dict[lt]:
+                    # look back over the previous hour to pinpoint crossover
+                    ukv0 = ukv_dict[lt-60]
+                    ukv1 = ukv_dict[lt]
+                    diff = ukv1 - ukv0
+                    ukv_interp = []
+                    for i in range(5):
+                        # TODO skip nan values
+                        ukv_interp.append(ukv0 + i*diff/4.)
+
+                    nc_interp = [
+                        nc_dict[lt-60], nc_dict[lt-45], nc_dict[lt-30], nc_dict[lt-15], nc_dict[lt]
+                    ]
+
+                    for i in range(4):
+                        if nc_interp[i+1] <= ukv_interp[i+1]:
+                            if nc_interp[i] > ukv_interp[i]:
+                                # linear interp: nc_csi = at + b ; ukv_csi = ct + d
+                                a = (nc_interp[i+1] - nc_interp[i]) / 15.  # timestep
+                                b = nc_interp[i]
+                                c = (ukv_interp[i+1] - ukv_interp[i]) / 15.
+                                d = ukv_interp[i]
+
+                                dt_cross = (d - b) / (a - c)
+                                csi_cross = a*dt_cross + b
+                                t_cross = dt_cross + (lt - 60 + i*15)
+                            else:
+                                csi_cross = ukv_interp[i]
+                                t_cross = (lt - 60 + i*15)
+
+                            cross_found = True
+                            break
+
+                    break
+
+            if cross_found:
+                nwet.append(self.data[cycle]['wet_pixels'])
+                pwet.append(float(nwet[-1]) / float(nwet[-1] + self.data[cycle]['dry_pixels']))
+                crossover_time.append(t_cross)
+                crossover_csi.append(csi_cross)
+
+        return (nwet, pwet, crossover_time, crossover_csi)
 
 
-def plot_by_threshold(stats_dicts, stat, thresh, outname):
-    """Plots statistic "stat" by lead time for each model at a single threshold"""
-    plt.figure(figsize=(8, 6))
-    for model in stats_dicts:
-        leadtime, skill = stats_dicts[model].trend_with_leadtime(thresh, stat)
-        plt.plot(leadtime, skill, label=f'{model}')
-    plt.legend()
-    plt.xlabel('Lead time (minutes)')
-    plt.xlim(left=0)
-    plt.xticks(np.arange(0, leadtime[-1]+1, 60))
-    plt.ylabel(stat)
-    plt.ylim(0, 1)
-    plt.title('{} at {:.2f} mm/h'.format(stat, thresh))
-    plt.tight_layout()
-    plt.savefig(outname)
 
