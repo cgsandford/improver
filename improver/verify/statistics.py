@@ -80,15 +80,38 @@ class StatsDict:
         return self._sort_by_x(thresholds, skill)
 
 
+def gen_cluster_mapping(regimes):
+    """Define mapping from observed regimes to smaller set of
+    European clusters"""
+    european_clusters = {
+        1: [6, 9, 11, 19, 25, 27, 28],
+        2: [4, 8, 20, 23, 26, 30],
+        3: [1, 13, 14, 24],
+        4: [2, 12, 15, 21],
+        5: [5, 16, 17, 22],
+        6: [3, 18],
+        7: [7, 29],
+        8: [10]
+    }
+    mapping = {}
+    for reg in set(regimes):
+        for ec in european_clusters:
+            if reg in european_clusters[ec]:
+                mapping[reg] = ec
+    return mapping
+
+
 class SkillCrossover:
     """Deep dictionary containing trends of CSI with lead time for each model,
     in order to calculate nowcast / UKV crossovers"""
 
-    def __init__(self, infiles, startdate, enddate, verbose_read=True):
+    def __init__(self, countfiles, regfile, startdate, enddate,
+                 verbose_read=True, use_eu=True):
         """Read counts straight from files, retaining cycle association
 
         Args:
-            infiles (list of str)
+            countfiles (list of str)
+            regfile (str or None)
             startdate (int)
                 Date in YYYYMMDD format, or 0
             enddate (int)
@@ -96,10 +119,52 @@ class SkillCrossover:
             verbose_read (bool):
                 If True, print out reasons for removing certain cycles in
                 data checking
+            use_eu (bool):
+                Defines set of regimes to use for classification.  If True,
+                use the 8 wider European regimes.  If False, use the full UK
+                Decider set.
         """
+        self.regimes = {}
+        if regfile is not None:
+            self._get_regimes(regfile, use_eu)
+
         self.verbose = verbose_read
         self.nowcast = None
         self.data = {}
+        self._read_data(countfiles, startdate, enddate)
+
+        # check all entries in self.data have required info
+        print(f'Read {len(self.data)} cycles into dict')
+        self._check_data()
+        print(f'Retained {len(self.data)} cycles for analysis')
+
+    def _get_regimes(self, infile, use_eu):
+        """Read regime per day in YYYYMMDD format.  Textfile has lines of form:
+        YYYY MM DD 12 regime (forecast regimes...)
+        """
+        eucluster = gen_cluster_mapping(np.arange(1, 26.1, 1))
+        with open(infile) as dtf:
+            line = dtf.readline()
+            while line:
+                if line.startswith('2020'):
+                    data = line.strip('\n').split(' ')
+                    dt = data[0]+data[1]+data[2]
+                    reg = int(data[4])
+                    if reg == 0:
+                        # take the most recent forecast regime where no
+                        # observation is available
+                        reg = int(data[5])
+                    if use_eu:
+                        # use subset of 8 wider European patterns
+                        self.regimes[dt] = eucluster[reg]
+                    else:
+                        # use full 30 Decider regimes
+                        self.regimes[dt] = reg
+                line = dtf.readline()
+
+    def _read_data(self, infiles, startdate, enddate):
+        """Read data from counts files"""
+
         for datafile in infiles:
             # find out which model this file is associated with
             model = get_model(datafile)
@@ -135,12 +200,6 @@ class SkillCrossover:
 
                     line = dtf.readline()
 
-        # check all entries in self.data have required info
-        print(f'Read {len(self.data)} cycles into dict')
-        self._check_data()
-        print(f'Retained {len(self.data)} cycles for analysis')
-
-
     @staticmethod
     def _get_cycle(vt, lt):
         """Get forecast cycle that generated this line in YYYYMMDDTHHMMZ format"""
@@ -156,9 +215,11 @@ class SkillCrossover:
         return False
 
     def _initialise_cycle(self, cycle, model):
-        """Add new cycle and / or model to data dictionary"""
+        """Add new cycle and / or model to data dictionary, including weather
+        regime"""
         if cycle not in self.data:
             self.data[cycle] = {}
+            self.data[cycle]['regime'] = self.regimes[cycle[:8]]
         if model not in self.data[cycle]:
             self.data[cycle][model] = {'leadtimes': [], 'CSI_0': [], 'CSI_1': []}
 
@@ -183,7 +244,7 @@ class SkillCrossover:
         def unexpected_keys(item, keys, expected):
             return f'{item} has {keys}, expected {expected}'
 
-        expected_keys = {'wet_pixels', 'dry_pixels', 'UKV', self.nowcast}
+        expected_keys = {'wet_pixels', 'dry_pixels', 'regime', 'UKV', self.nowcast}
         model_keys = {'leadtimes', 'CSI_0', 'CSI_1'}
         remove_cycles = []
 
@@ -224,6 +285,55 @@ class SkillCrossover:
         missing_leadtimes = set(expected_leadtimes[model]) - set(leadtimes)
         return missing_leadtimes
 
+    @staticmethod
+    def _interpolate_to_cross(leadtimes, nc_dict, ukv_dict):
+        """Find first lead time at which UKV skill exceeds nowcast"""
+        for lt in leadtimes:
+            if nc_dict[lt] <= ukv_dict[lt]:
+                # if we hit at the first lead time, go back until we find a
+                # nowcast with higher skill than the UKV at T+1
+                if lt == 60:
+                    t_cross = None
+                    for nclt in [45, 30, 15]:
+                        if nc_dict[nclt] > ukv_dict[60]:
+                            tcross = nclt
+                    if t_cross is None:
+                        t_cross = 15
+                    csi_cross = ukv_dict[60]
+
+                    return t_cross, csi_cross
+
+                # look back over the previous hour to pinpoint crossover
+                ukv0 = ukv_dict[lt-60]
+                ukv1 = ukv_dict[lt]
+                diff = ukv1 - ukv0
+                ukv_interp = []
+                nc_interp = []
+                for i in range(5):
+                    ukv_interp.append(ukv0 + i*diff/4.)
+                    nc_interp.append(nc_dict[lt-(4-i)*15])
+
+                for i in range(4):
+                    if nc_interp[i+1] <= ukv_interp[i+1]:
+                        # interpolate linearly over 15 minute timestep:
+                        # nc_csi = at + b ; ukv_csi = ct + d
+                        a = (nc_interp[i+1] - nc_interp[i]) / 15.
+                        b = nc_interp[i]
+                        c = (ukv_interp[i+1] - ukv_interp[i]) / 15.
+                        d = ukv_interp[i]
+
+                        dt_cross = (d - b) / (a - c)
+                        csi_cross = a*dt_cross + b
+                        t_cross = dt_cross + (lt - 60 + i*15)
+
+                        return t_cross, csi_cross
+
+        # if we didn't find a crossover point, set it to the maximum 6 hours
+        t_cross = max(leadtimes)
+        csi_cross = nc_dict[max(leadtimes)]
+
+        return t_cross, csi_cross
+
     def calculate_crossovers(self, zero_threshold=True):
         """From dictionary, calculate the crossover skill lead time and value for each
         cycle.  If CSI is invalid, filter out.
@@ -243,8 +353,8 @@ class SkillCrossover:
                 If True, calculate crossover time and CSI for the "zero" (0.03 mm/h)
                 threshold.  If False, calculate for 1 mm/h.
         """
-        nwet = []
         pwet = []
+        regime = []
         crossover_time = []
         crossover_csi = []
 
@@ -265,58 +375,15 @@ class SkillCrossover:
                 continue
 
             # find first lead time at which UKV skill exceeds nowcast
-            cross_found = False
-            for lt in ukv_lt:
-                if nc_dict[lt] <= ukv_dict[lt]:
+            t_cross, csi_cross = self._interpolate_to_cross(ukv_lt, nc_dict, ukv_dict)
 
-                    # if we hit at the first lead time, go back until we find a
-                    # nowcast with higher skill than the UKV at T+1
-                    if lt == 60:
-                        tcross = None
-                        for nclt in [45, 30, 15]:
-                            if nc_dict[nclt] > ukv_dict[60]:
-                                tcross = nclt
-                        if tcross is None:
-                            tcross = 15
-                        csi_cross = ukv_dict[60]
-                        cross_found = True
-                        break
+            nwet = self.data[cycle]['wet_pixels']
+            pwet.append(float(nwet) / float(nwet + self.data[cycle]['dry_pixels']))
+            regime.append(self.data[cycle]['regime'])
+            crossover_time.append(t_cross)
+            crossover_csi.append(csi_cross)
 
-                    # look back over the previous hour to pinpoint crossover
-                    ukv0 = ukv_dict[lt-60]
-                    ukv1 = ukv_dict[lt]
-                    diff = ukv1 - ukv0
-                    ukv_interp = []
-                    nc_interp = []
-                    for i in range(5):
-                        ukv_interp.append(ukv0 + i*diff/4.)
-                        nc_interp.append(nc_dict[lt-(4-i)*15])
-
-                    for i in range(4):
-                        if nc_interp[i+1] <= ukv_interp[i+1]:
-                            # interpolate linearly over 15 minute timestep:
-                            # nc_csi = at + b ; ukv_csi = ct + d
-                            a = (nc_interp[i+1] - nc_interp[i]) / 15.
-                            b = nc_interp[i]
-                            c = (ukv_interp[i+1] - ukv_interp[i]) / 15.
-                            d = ukv_interp[i]
-
-                            dt_cross = (d - b) / (a - c)
-                            csi_cross = a*dt_cross + b
-                            t_cross = dt_cross + (lt - 60 + i*15)
-
-                            cross_found = True
-                            break
-
-                    break
-
-            if cross_found:
-                nwet.append(self.data[cycle]['wet_pixels'])
-                pwet.append(float(nwet[-1]) / float(nwet[-1] + self.data[cycle]['dry_pixels']))
-                crossover_time.append(t_cross)
-                crossover_csi.append(csi_cross)
-
-        return (np.array(nwet), np.array(pwet), np.array(crossover_time), np.array(crossover_csi))
+        return (np.array(pwet), np.array(regime), np.array(crossover_time), np.array(crossover_csi))
 
 
 
