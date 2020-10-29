@@ -38,7 +38,7 @@ def plot_by_threshold(stats_dicts, stat, thresh, outname):
     plt.savefig(outname)
 
 
-def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None,
+def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None, subset=None,
                                  title=None, savepath=None):
     """Plot crossover skill with amount of rain in original image.
     Colour code by crossover CSI or weather regime.  Option to filter
@@ -51,8 +51,8 @@ def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None,
     if cmax is None:
         # Plot by regime - categorical colorbar
         rmax = max(ccsi)
-        if regimes is not None:
-            plot_where = np.where(np.isin(ccsi, regimes))
+        if subset is not None:
+            plot_where = np.where(np.isin(ccsi, subset))
             pwet = pwet[plot_where]
             ctime = ctime[plot_where]
             ccsi = ccsi[plot_where]
@@ -65,6 +65,12 @@ def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None,
         plt.colorbar(ticks=np.arange(1, rmax+0.1, 1))
 
     else:
+        if regimes is not None and subset is not None:
+            plot_where = np.where(np.isin(regimes, subset))
+            pwet = pwet[plot_where]
+            ctime = ctime[plot_where]
+            ccsi = ccsi[plot_where]
+
         # Plot by CSI - continuous colorbar
         plt.scatter(pwet, ctime, c=ccsi, vmin=0.0, vmax=cmax)
         plt.colorbar(ticks=np.arange(0, cmax+0.1, 0.1))
@@ -85,12 +91,10 @@ def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None,
         plt.show()
 
 
-def hist_crossover_with_regime(ctime, regime, min_count=75, title=None, savepath=None):
+def hist_crossover_with_regime(ctime, regime, subset=None, title=None, savepath=None):
     """Plot histograms of crossover time with regime"""
     set_of_regimes = set(regime)
     time_bins = np.arange(45, 380, 30)
-
-    print(len(ctime), len(regime))
     
     plt.figure(figsize=(8, 5))
     ax = plt.subplot(111)
@@ -98,9 +102,10 @@ def hist_crossover_with_regime(ctime, regime, min_count=75, title=None, savepath
     ax.axvline(x=150, color='black', linestyle='dashed')
     for r in set_of_regimes:
         times = np.array(ctime)[regime == r]
-        # only plot regimes for which we have a decent number of points
         count = len(times)
-        if count < min_count:
+        if count < 75:
+            continue
+        if subset is not None and r not in subset:
             continue
         ax.hist(times, time_bins, label=f"Regime {r} ({count})", histtype='step', density=True)
 

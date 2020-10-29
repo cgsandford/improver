@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from improver.utilities.temporal import cycletime_to_datetime, datetime_to_cycletime
 from improver.verify.parse_file import format_line, get_model
+from improver.verify.regimes import gen_cluster_mapping
 
 
 def calc_stats(hits, misses, false, no_det):
@@ -78,27 +79,6 @@ class StatsDict:
             thresholds.append(thresh)
             skill.append(self.data[leadtime][thresh][stat])
         return self._sort_by_x(thresholds, skill)
-
-
-def gen_cluster_mapping(regimes):
-    """Define mapping from observed regimes to smaller set of
-    European clusters"""
-    european_clusters = {
-        1: [6, 9, 11, 19, 25, 27, 28],
-        2: [4, 8, 20, 23, 26, 30],
-        3: [1, 13, 14, 24],
-        4: [2, 12, 15, 21],
-        5: [5, 16, 17, 22],
-        6: [3, 18],
-        7: [7, 29],
-        8: [10]
-    }
-    mapping = {}
-    for reg in set(regimes):
-        for ec in european_clusters:
-            if reg in european_clusters[ec]:
-                mapping[reg] = ec
-    return mapping
 
 
 class SkillCrossover:
