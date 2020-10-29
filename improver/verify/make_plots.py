@@ -38,6 +38,54 @@ def plot_by_threshold(stats_dicts, stat, thresh, outname):
     plt.savefig(outname)
 
 
+def _csi_contours(pod, sr):
+    """Takes the list of x and y axis points (POD and Success Ratio = 1 - FAR)
+    and constructs the z-values we'll contour fill"""
+    csi = np.zeros(shape=(len(sr), len(pod)))
+    for x in range(len(sr)):
+        for y in range(len(pod)):
+            if pod[y] > 0 and sr[x] > 0:
+                denom = (1./pod[y] + 1./sr[x]) - 1.
+                csi[x, y] = 1. / denom
+    return csi
+
+
+def make_4D_plot(stats_dicts, leadtime, outname):
+    """Based on plots seen at EPS-SRNWP meeting.  Plot POD against FAR for each
+    model, one point per threshold.  Show background contour shading of CSI."""
+
+    plot_stats = {}
+
+    for model in stats_dicts:
+        plot_stats[model] = {"thresholds": [], "POD": [], "SR": []}
+        for thresh in sorted(stats_dicts[model].data[leadtime]):
+            plot_stats[model]["thresholds"].append(thresh)
+            plot_stats[model]["POD"].append(stats_dicts[model].data[leadtime][thresh]['POD'])       
+            plot_stats[model]["SR"].append(1. - stats_dicts[model].data[leadtime][thresh]['FAR'])
+
+    plt.figure(figsize=(8, 6))
+
+    pod = sr = np.arange(0, 1.01, 0.05)
+    plt.contourf(pod, sr, _csi_contours(pod, sr), cmap='Blues', levels=np.arange(0, 1.01, 0.05))
+    cbar = plt.colorbar()
+    cbar.ax.set_ylabel('Critical success index')
+    cbar.set_ticks(np.arange(0, 1.01, 0.1))
+
+    for model in plot_stats:
+        plt.plot(plot_stats[model]['SR'], plot_stats[model]['POD'], label=model, marker='o')
+
+    plt.xlabel('Success ratio')
+    plt.ylabel('Hit rate')
+    plt.legend()
+    
+    plt.tight_layout()
+
+    if outname is not None:
+        plt.savefig(outname)
+    else:
+        plt.show()
+
+
 def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None, subset=None,
                                  title=None, savepath=None):
     """Plot crossover skill with amount of rain in original image.
