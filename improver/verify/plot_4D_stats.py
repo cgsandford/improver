@@ -55,6 +55,12 @@ def main(infiles, plotdir, startdate, enddate):
     outname = os.path.join(plotdir, '4D_2hr.png')
     make_4D_plot(stats_dicts, 120, outname)
 
+    outname = os.path.join(plotdir, '4D_3hr.png')
+    make_4D_plot(stats_dicts, 180, outname)
+
+    outname = os.path.join(plotdir, '4D_4hr.png')
+    make_4D_plot(stats_dicts, 240, outname)
+
 
 if __name__ == "__main__":
     

@@ -86,6 +86,17 @@ def make_4D_plot(stats_dicts, leadtime, outname):
         plt.show()
 
 
+def _map_to_colorbar(regimes):
+    """Returns a mapped array with its associated ticks and ticklabels"""
+    map = {}
+    for i, source in enumerate(sorted(np.unique(regimes))):
+        map[source] = i
+    ticks = sorted(map.values())
+    ticklabels = [f'{source:d}' for source in sorted(map.keys())]
+    mapped_regimes = [map[r] for r in regimes]
+    return mapped_regimes, ticks, ticklabels
+
+
 def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None, subset=None,
                                  title=None, savepath=None):
     """Plot crossover skill with amount of rain in original image.
@@ -98,19 +109,19 @@ def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None, subset=N
 
     if cmax is None:
         # Plot by regime - categorical colorbar
-        rmax = max(ccsi)
         if subset is not None:
             plot_where = np.where(np.isin(ccsi, subset))
             pwet = pwet[plot_where]
             ctime = ctime[plot_where]
             ccsi = ccsi[plot_where]
 
-        cmap='tab10'
-        if rmax > 10:
-            cmap='tab20'
+        # Cut out the numbers we're not using
+        mapped_regimes, ticks, ticklabels = _map_to_colorbar(ccsi)
+        cmap = 'Set2' if len(ticks) <= 8 else 'tab20'
 
-        plt.scatter(pwet, ctime, c=ccsi, vmin=1, vmax=rmax, cmap=cmap)
-        plt.colorbar(ticks=np.arange(1, rmax+0.1, 1))
+        plt.scatter(pwet, ctime, c=mapped_regimes, vmin=0, vmax=max(ticks), cmap=cmap)
+        cbar = plt.colorbar(ticks=ticks)
+        cbar.ax.set_yticklabels(ticklabels)
 
     else:
         if regimes is not None and subset is not None:
@@ -125,7 +136,7 @@ def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None, subset=N
 
     plt.ylim(40, 400)
     plt.ylabel('Crossover time (mins)')
-    plt.xlim(left=0)  #, 0.6)
+    plt.xlim(0, 0.6)
     plt.xlabel('Proportion of "wet" pixels in T+0 radar')
 
     plt.tight_layout()
@@ -151,11 +162,15 @@ def hist_crossover_with_regime(ctime, regime, subset=None, title=None, savepath=
     for r in set_of_regimes:
         times = np.array(ctime)[regime == r]
         count = len(times)
-        if count < 75:
+        if count < 50:
             continue
         if subset is not None and r not in subset:
             continue
-        ax.hist(times, time_bins, label=f"Regime {r} ({count})", histtype='step', density=True)
+
+        n, bins = np.histogram(times, time_bins)
+        mode = bins[list(n).index(max(n))]
+
+        ax.hist(times, time_bins, label=f"Regime {r} ({count}): {(mode+15)/60} hrs", histtype='step') #, density=True)
 
     plt.xlim(30, 390)
     plt.xlabel('Skill crossover time (mins)')
