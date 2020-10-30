@@ -8,7 +8,20 @@ from improver.verify.regimes import GOOD_REGIMES, BAD_REGIMES
 from improver.verify.statistics import SkillCrossover
 
 
-def make_plots(crossover, filespine, zero_threshold):
+def make_plots(crossover, filespine, zero_threshold, plots=[]):
+    """
+    Args:
+        crossover (instance):
+            Instance of SkillCrossover class containing data from input text
+            files on CSI with lead time at 0 and 1 mm/h thresholds.
+        filespine (str):
+            Directory and start of filename to save different plots
+        zero_threshold (bool):
+            If True, plot for rain / no rain threshold.  If False, plot for 1 mm/h.
+        plots (list of str):
+            List of string plot types to generate
+    """
+
 
     pwet, regime, c_time, c_csi = crossover.calculate_crossovers(zero_threshold=zero_threshold)
 
@@ -21,47 +34,46 @@ def make_plots(crossover, filespine, zero_threshold):
         thresh = '1mmh'
         cmax=0.5
 
-    plotname1a = f'{filespine}_{thresh}.png'
-    plotname1b = f'{filespine}_{thresh}_good.png'
-    plotname1c = f'{filespine}_{thresh}_bad.png'
-    plotname2a = f'{filespine}_{thresh}_with_regime.png'
-    plotname2b = f'{filespine}_{thresh}_with_regime_good.png'
-    plotname2c = f'{filespine}_{thresh}_with_regime_bad.png'    
-    plotname3a = f'{filespine}_{thresh}_ctime_regime.png'
-    plotname3b = f'{filespine}_{thresh}_ctime_regime_good.png'
-    plotname3c = f'{filespine}_{thresh}_ctime_regime_bad.png'
+    if "crossover_time_csi" in plots:
+        plotname1a = f'{filespine}_{thresh}.png'
+        plotname1b = f'{filespine}_{thresh}_good.png'
+        plotname1c = f'{filespine}_{thresh}_bad.png'
 
-    """
-    plot_crossover_with_coverage(
-        pwet, c_time, c_csi, cmax, title=plottitle, savepath=plotname1a
-    )
-
-    plot_crossover_with_coverage(
-        pwet, c_time, c_csi, cmax, regimes=regime, subset=GOOD_REGIMES,
+        plot_crossover_with_coverage(
+            pwet, c_time, c_csi, cmax, title=plottitle, savepath=plotname1a
+        )
+        plot_crossover_with_coverage(
+            pwet, c_time, c_csi, cmax, regimes=regime, subset=GOOD_REGIMES,
         title=plottitle, savepath=plotname1b
-    )
+        )
+        plot_crossover_with_coverage(
+            pwet, c_time, c_csi, cmax, regimes=regime, subset=BAD_REGIMES,
+            title=plottitle, savepath=plotname1c
+        )
 
-    plot_crossover_with_coverage(
-        pwet, c_time, c_csi, cmax, regimes=regime, subset=BAD_REGIMES,
-        title=plottitle, savepath=plotname1c
-    )
+    if "crossover_time_regime" in plots:
+        plotname2a = f'{filespine}_{thresh}_with_regime.png'
+        plotname2b = f'{filespine}_{thresh}_with_regime_good.png'
+        plotname2c = f'{filespine}_{thresh}_with_regime_bad.png'    
 
-    plot_crossover_with_coverage(
-        pwet, c_time, regime, None, title=plottitle, savepath=plotname2a
-    )
+        plot_crossover_with_coverage(
+            pwet, c_time, regime, None, title=plottitle, savepath=plotname2a
+        )
+        plot_crossover_with_coverage(
+            pwet, c_time, regime, None, title=plottitle, subset=GOOD_REGIMES, savepath=plotname2b
+        )
+        plot_crossover_with_coverage(
+            pwet, c_time, regime, None, title=plottitle, subset=BAD_REGIMES, savepath=plotname2c
+        )
 
-    plot_crossover_with_coverage(
-        pwet, c_time, regime, None, title=plottitle, subset=GOOD_REGIMES, savepath=plotname2b
-    )
+    if "hist_regime" in plots:
+        plotname3a = f'{filespine}_{thresh}_ctime_regime.png'
+        plotname3b = f'{filespine}_{thresh}_ctime_regime_good.png'
+        plotname3c = f'{filespine}_{thresh}_ctime_regime_bad.png'
 
-    plot_crossover_with_coverage(
-        pwet, c_time, regime, None, title=plottitle, subset=BAD_REGIMES, savepath=plotname2c
-    )
-    """
- 
-    hist_crossover_with_regime(c_time, regime, savepath=plotname3a)
-    #hist_crossover_with_regime(c_time, regime, subset=GOOD_REGIMES, savepath=plotname3b)
-    #hist_crossover_with_regime(c_time, regime, subset=BAD_REGIMES, savepath=plotname3c)
+        hist_crossover_with_regime(c_time, regime, savepath=plotname3a)
+        hist_crossover_with_regime(c_time, regime, subset=GOOD_REGIMES, savepath=plotname3b)
+        hist_crossover_with_regime(c_time, regime, subset=BAD_REGIMES, savepath=plotname3c)
 
 
 def main(countfiles, regimes, plotdir, startdate, enddate):
@@ -100,8 +112,10 @@ def main(countfiles, regimes, plotdir, startdate, enddate):
     nc_name = f'{crossover.nowcast}'.replace(' ', '_').lower()
     filespine = os.path.join(plotdir, f'{start}-{end}_{nc_name}')
 
-    make_plots(crossover, filespine, True)
-    make_plots(crossover, filespine, False)
+    make_plots(crossover, filespine, True, plots=[
+        "hist_regime", "crossover_time_regime", "crossover_time_csi"
+    ])
+    make_plots(crossover, filespine, False, plots=["hist_regime"])
 
 
 if __name__ == "__main__":

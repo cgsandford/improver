@@ -206,7 +206,7 @@ def hist_crossover_with_regime(ctime, regime, subset=None, title=None, savepath=
     for r in set_of_regimes:
         times = np.array(ctime)[regime == r]
         count = len(times)
-        if count < 50:
+        if count < 95:
             continue
         if subset is not None and r not in subset:
             continue
