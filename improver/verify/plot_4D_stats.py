@@ -2,8 +2,8 @@ import argparse
 import os
 
 from improver.verify.parse_file import get_model, accumulate_count_files
+from improver.verify.plotlib import make_4D_plot
 from improver.verify.statistics import StatsDict
-from improver.verify.make_plots import make_4D_plot
 
 
 def main(infiles, plotdir, startdate, enddate):

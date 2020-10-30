@@ -2,8 +2,8 @@ import argparse
 import os
 
 from improver.verify.parse_file import get_model, accumulate_count_files, set_basename
+from improver.verify.plotlib import plot_by_leadtime
 from improver.verify.statistics import StatsDict
-from improver.verify.make_plots import plot_by_leadtime, plot_by_threshold
 
 
 def main(infiles, plotdir, stats, thresholds, startdate, enddate):
@@ -57,7 +57,7 @@ def main(infiles, plotdir, stats, thresholds, startdate, enddate):
                 startdate=startdate, enddate=enddate
             )
             outname = os.path.join(plotdir, basename)
-            plot_by_threshold(stats_dicts, stat, threshold, outname)
+            plot_by_leadtime(stats_dicts, stat, [threshold], outname, one_model=False)
 
 
 if __name__ == "__main__":

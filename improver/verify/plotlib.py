@@ -4,7 +4,15 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-def plot_by_leadtime(stats_dict, stat, thresholds, outname):
+def plot_by_leadtime(stats_dicts, stat, thresholds, outname, one_model=True):
+    """Plots statistic "stat" by lead time"""
+    if one_model:
+        _plot_by_leadtime_one_model(stats_dicts[0], stat, thresholds, outname)
+    else:
+        _plot_by_leadtime_one_threshold(stats_dicts, stat, thresholds[0], outname)
+
+
+def _plot_by_leadtime_one_model(stats_dict, stat, thresholds, outname):
     """Plots statistic "stat" by lead time for a range of thresholds"""
     plt.figure(figsize=(8, 6))
     for thresh in thresholds:
@@ -21,7 +29,7 @@ def plot_by_leadtime(stats_dict, stat, thresholds, outname):
     plt.savefig(outname)
 
 
-def plot_by_threshold(stats_dicts, stat, thresh, outname):
+def _plot_by_leadtime_one_threshold(stats_dicts, stat, thresh, outname):
     """Plots statistic "stat" by lead time for each model at a single threshold"""
     plt.figure(figsize=(8, 6))
     for model in stats_dicts:
@@ -170,7 +178,7 @@ def hist_crossover_with_regime(ctime, regime, subset=None, title=None, savepath=
         n, bins = np.histogram(times, time_bins)
         mode = bins[list(n).index(max(n))]
 
-        ax.hist(times, time_bins, label=f"Regime {r} ({count}): {(mode+15)/60} hrs", histtype='step') #, density=True)
+        ax.hist(times, time_bins, label=f"Regime {r} ({count}): {(mode+15)/60} hrs", histtype='step')
 
     plt.xlim(30, 390)
     plt.xlabel('Skill crossover time (mins)')

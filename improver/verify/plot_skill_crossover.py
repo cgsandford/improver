@@ -3,9 +3,9 @@ import os
 
 from matplotlib import pyplot as plt
 
-from improver.verify.statistics import SkillCrossover
-from improver.verify.make_plots import plot_crossover_with_coverage, hist_crossover_with_regime
+from improver.verify.plotlib import plot_crossover_with_coverage, hist_crossover_with_regime
 from improver.verify.regimes import GOOD_REGIMES, BAD_REGIMES
+from improver.verify.statistics import SkillCrossover
 
 
 def make_plots(crossover, filespine, zero_threshold):
