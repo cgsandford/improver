@@ -175,8 +175,11 @@ class SkillCrossover:
                         if np.isclose(thresh, 0.03):
                             self.data[cycle][model]['leadtimes'].append(lt)
                             self.data[cycle][model]['CSI_0'].append(self._csi(hits, misses, false))
-                        elif np.isclose(thresh, 1):
-                            self.data[cycle][model]['CSI_1'].append(self._csi(hits, misses, false))
+                        else:
+                            tstring = f'{int(thresh):d}' if thresh >= 1 else f'{thresh:.1f}'
+                            self.data[cycle][model][f'CSI_{tstring}'].append(
+                                self._csi(hits, misses, false)
+                            )
 
                     line = dtf.readline()
 
@@ -201,7 +204,9 @@ class SkillCrossover:
             self.data[cycle] = {}
             self.data[cycle]['regime'] = self.regimes[cycle[:8]]
         if model not in self.data[cycle]:
-            self.data[cycle][model] = {'leadtimes': [], 'CSI_0': [], 'CSI_1': []}
+            self.data[cycle][model] = {'leadtimes': [], 'CSI_0': []}
+            for t in ['0.1', '0.5', '1', '2', '4']:
+                self.data[cycle][model][f'CSI_{t}'] = []
 
     def _wet_dry_count(self, cycle, hits, misses, false, no_det):
         """Count number of wet and dry pixels in initialising radar image"""
@@ -225,7 +230,7 @@ class SkillCrossover:
             return f'{item} has {keys}, expected {expected}'
 
         expected_keys = {'wet_pixels', 'dry_pixels', 'regime', 'UKV', self.nowcast}
-        model_keys = {'leadtimes', 'CSI_0', 'CSI_1'}
+        model_keys = {'leadtimes', 'CSI_0', 'CSI_0.1', 'CSI_0.5', 'CSI_1', 'CSI_2', 'CSI_4'}
         remove_cycles = []
 
         for cycle in self.data:
@@ -314,7 +319,7 @@ class SkillCrossover:
 
         return t_cross, csi_cross
 
-    def calculate_crossovers(self, zero_threshold=True):
+    def calculate_crossovers(self, tstring='0'):
         """From dictionary, calculate the crossover skill lead time and value for each
         cycle.  If CSI is invalid, filter out.
 
@@ -329,17 +334,17 @@ class SkillCrossover:
                 Interpolated CSI at which nowcast skill dips below UKV.  If any of
                 the input CSI values are invalid, meaning this crossover cannot be
                 calculated, no entry is returned.  This filters out "no rain" cases.
-            zero_threshold (bool):
-                If True, calculate crossover time and CSI for the "zero" (0.03 mm/h)
-                threshold.  If False, calculate for 1 mm/h.
+            tstring (string):
+                String index of threshold required.  Permitted values are: '0', '0.1',
+                '0.5', '1', '2', '4'.
         """
         pwet = []
         regime = []
         crossover_time = []
         crossover_csi = []
 
-        for cycle in self.data:
-            csi_index = 'CSI_0' if zero_threshold else 'CSI_1'
+        for cycle in sorted(self.data):
+            csi_index = f'CSI_{tstring}'
 
             nc_lt = self.data[cycle][self.nowcast]['leadtimes']
             nc_csi = self.data[cycle][self.nowcast][csi_index]

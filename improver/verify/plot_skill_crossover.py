@@ -3,7 +3,13 @@ import os
 
 from matplotlib import pyplot as plt
 
-from improver.verify.plotlib import plot_crossover_with_coverage, hist_crossover_with_regime
+from improver.verify.plotlib import (
+    plot_crossover_with_coverage,
+    hist_crossover_with_regime,
+    hist_exclude_regimes,
+    hist_groupings,
+    plot_crossover_with_leadtime_thresh_regime
+)
 from improver.verify.regimes import GOOD_REGIMES, BAD_REGIMES
 from improver.verify.statistics import SkillCrossover
 
@@ -22,8 +28,8 @@ def make_plots(crossover, filespine, zero_threshold, plots=[]):
             List of string plot types to generate
     """
 
-
-    pwet, regime, c_time, c_csi = crossover.calculate_crossovers(zero_threshold=zero_threshold)
+    tstring = '0' if zero_threshold else '1'
+    pwet, regime, c_time, c_csi = crossover.calculate_crossovers(tstring=tstring)
 
     if zero_threshold:
         plottitle = f'{crossover.nowcast} CSI crossover: rain / no rain threshold'
@@ -72,8 +78,19 @@ def make_plots(crossover, filespine, zero_threshold, plots=[]):
         plotname3c = f'{filespine}_{thresh}_ctime_regime_bad.png'
 
         hist_crossover_with_regime(c_time, regime, savepath=plotname3a)
-        hist_crossover_with_regime(c_time, regime, subset=GOOD_REGIMES, savepath=plotname3b)
-        hist_crossover_with_regime(c_time, regime, subset=BAD_REGIMES, savepath=plotname3c)
+        #hist_crossover_with_regime(c_time, regime, subset=GOOD_REGIMES, savepath=plotname3b)
+        #hist_crossover_with_regime(c_time, regime, subset=BAD_REGIMES, savepath=plotname3c)
+
+        plotname4 = f'{filespine}_{thresh}_ctime_regime_grouped.png'
+        include_groupings = [[1], [6], [8, 10]]
+        # TODO high confidence in 1, 19 grouping from pressure patterns - reinstate?
+        hist_groupings(c_time, regime, include_groupings, savepath=plotname4)
+
+        # ungrouped = [[2, 4, 24], [5, 14]] and all with trivial counts
+        exclude_groupings = [[1, 19], [6, 7, 12], [8, 10]]
+        for group in exclude_groupings:
+            plotname = f'{filespine}_{thresh}_ctime_regime_exclude_group{group[0]}.png'            
+            hist_exclude_regimes(c_time, regime, excluded=group, savepath=plotname)            
 
 
 def main(countfiles, regimes, plotdir, startdate, enddate):
@@ -111,11 +128,30 @@ def main(countfiles, regimes, plotdir, startdate, enddate):
 
     nc_name = f'{crossover.nowcast}'.replace(' ', '_').lower()
     filespine = os.path.join(plotdir, f'{start}-{end}_{nc_name}')
+    all_plots = ["crossover_time_csi", "crossover_time_regime", "hist_regime"]
 
-    make_plots(crossover, filespine, True, plots=[
-        "hist_regime", "crossover_time_regime", "crossover_time_csi"
-    ])
-    make_plots(crossover, filespine, False, plots=["hist_regime"])
+    make_plots(crossover, filespine, True, plots=all_plots[-1:])
+    make_plots(crossover, filespine, False, plots=all_plots[-1:])
+
+
+    # groupings...
+    ctimes = []
+    regimes = []
+    tstrings = ['0', '0.1', '0.5', '1', '2', '4']
+    for ts in tstrings:
+        _, r, c, _ = crossover.calculate_crossovers(tstring=ts)
+        ctimes.append(c)
+        regimes.append(r)
+
+    thresholds = [0.03, 0.1, 0.5, 1, 2, 4]
+    ungrouped = [[2, 4, 24], [5, 14]]
+    groupings = [[1, 19], [6, 7, 12], [8, 10]]
+
+    for group in groupings:
+        plotname = filespine+f'_crossovers_with_leadtime_thresh_regime_group{group[0]}.png'
+        plot_crossover_with_leadtime_thresh_regime(
+            thresholds, ctimes, regimes, subset=group, savepath=plotname
+        )
 
 
 if __name__ == "__main__":

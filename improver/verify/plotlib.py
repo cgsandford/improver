@@ -44,6 +44,7 @@ def plot_by_leadtime(stats_dicts, stat, thresholds, outname, one_model=False):
     plt.title(title)
     plt.tight_layout()
     plt.savefig(outname)
+    plt.close()
 
 
 def _csi_contours(pod, sr):
@@ -128,6 +129,7 @@ def make_4D_plot(stats_dicts, leadtime, outname):
         plt.savefig(outname)
     else:
         plt.show()
+    plt.close()
 
 
 def _map_to_colorbar(regimes):
@@ -192,29 +194,51 @@ def plot_crossover_with_coverage(pwet, ctime, ccsi, cmax, regimes=None, subset=N
         plt.savefig(savepath)
     else:
         plt.show()
+    plt.close()
+
+
+def _get_mode(times, time_bins=np.arange(45, 380, 30)):
+    n, bins = np.histogram(times, time_bins)
+    return bins[list(n).index(max(n))]
 
 
 def hist_crossover_with_regime(ctime, regime, subset=None, title=None, savepath=None):
     """Plot histograms of crossover time with regime"""
-    set_of_regimes = set(regime)
     time_bins = np.arange(45, 380, 30)
     
     plt.figure(figsize=(8, 5))
     ax = plt.subplot(111)
 
     ax.axvline(x=150, color='black', linestyle='dashed')
-    for r in set_of_regimes:
+    for r in set(regime):
         times = np.array(ctime)[regime == r]
         count = len(times)
-        if count < 95:
+        if count < 110:
             continue
         if subset is not None and r not in subset:
             continue
 
-        n, bins = np.histogram(times, time_bins)
-        mode = bins[list(n).index(max(n))]
+        mode = _get_mode(times)
+        ax.hist(times, time_bins, label=f"Regime {r} ({count}): {(mode+15)/60} hrs",
+                histtype='step', density=True)
 
-        ax.hist(times, time_bins, label=f"Regime {r} ({count}): {(mode+15)/60} hrs", histtype='step')
+    # plot total
+    if subset:
+        all_times = np.array(ctime)[np.isin(regime, subset)]
+    else:
+        all_times = np.array(ctime)
+
+    if subset and len(subset) > 1:
+        count = len(all_times)
+        mode = _get_mode(all_times)
+        ax.hist(all_times, time_bins, label=f"Regimes {subset} ({count}): {(mode+15)/60} hrs",
+                histtype='step', density=True, linewidth=2)   
+
+    elif subset is None:
+        count = len(all_times)
+        mode = _get_mode(all_times)
+        ax.hist(all_times, time_bins, label=f"All regimes ({count}): {(mode+15)/60} hrs",
+                histtype='step', density=True, linewidth=2) 
 
     plt.xlim(30, 390)
     plt.xlabel('Skill crossover time (mins)')
@@ -227,4 +251,136 @@ def hist_crossover_with_regime(ctime, regime, subset=None, title=None, savepath=
         plt.savefig(savepath)
     else:
         plt.show()
+    plt.close()
+
+
+def hist_exclude_regimes(ctime, regime, excluded, savepath=None):
+    """Plot histograms of crossover time for all input data, and with and without
+    excluded regimes"""
+    time_bins = np.arange(45, 380, 30)
+    
+    plt.figure(figsize=(8, 5))
+    ax = plt.subplot(111)
+
+    ax.axvline(x=150, color='black', linestyle='dashed')
+
+    # all regimes
+    count = len(ctime)
+    mode = _get_mode(ctime)
+    ax.hist(ctime, time_bins, label=f"All regimes ({count}): {(mode+15)/60} hrs",
+            histtype='step', density=True, linewidth=2)
+
+    # separate excluded regime
+    all_without_excluded = np.array(ctime)[~np.isin(regime, excluded)]
+    count = len(all_without_excluded)
+    mode = _get_mode(all_without_excluded)
+    label = f"All excluding {excluded} ({count}): {(mode+15)/60} hrs"
+    ax.hist(all_without_excluded, time_bins, label=label, histtype='step', density=True)
+
+    only_excluded = np.array(ctime)[np.isin(regime, excluded)]
+    count = len(only_excluded)
+    mode = _get_mode(only_excluded)
+    ax.hist(only_excluded, time_bins, label=f"Regimes {excluded} ({count}): {(mode+15)/60} hrs",
+            histtype='step', density=True)
+
+    plt.xlim(30, 390)
+    plt.xlabel('Skill crossover time (mins)')
+    plt.legend(loc='upper center')
+
+    if savepath is not None:
+        plt.savefig(savepath)
+    else:
+        plt.show()
+    plt.close()
+
+
+def hist_groupings(ctime, regime, groupings, savepath=None):
+    """Plot histograms of crossover time by groups of regime that show similar behaviour"""
+    time_bins = np.arange(45, 380, 30)
+    
+    plt.figure(figsize=(8, 5))
+    ax = plt.subplot(111)    
+    ax.axvline(x=150, color='black', linestyle='dashed')
+
+    for subset in groupings:
+        times = np.array(ctime)[np.isin(regime, subset)]
+        count = len(times)
+        mode = _get_mode(times)
+        label = f"Regimes {subset} ({count}): {(mode+15)/60} hrs"
+        ax.hist(times, time_bins, label=label, histtype='step', density=True)
+
+    plt.xlim(30, 390)
+    plt.xlabel('Skill crossover time (mins)')
+    plt.legend(loc='upper center')
+
+    if savepath is not None:
+        plt.savefig(savepath)
+    else:
+        plt.show()
+    plt.close()
+
+
+def plot_crossover_with_leadtime_thresh_regime(
+    thresholds, ctimes, regimes, subset=None, exclude=None, savepath=None
+):
+    """Takes parallel arrays at different thresholds; find modal crossover time per regime
+    and threshold.  Very broad brush to see if we can group regimes by similar behaviour."""
+
+    modal_crossover = {}
+    if subset is not None:
+        set_of_regimes = subset
+    elif exclude is not None:
+        set_of_regimes = set(regimes[0]) - set(exclude)
+    else:
+        set_of_regimes = set(regimes[0])
+
+    for ct, rg, th in zip(ctimes, regimes, thresholds):
+        for r in set_of_regimes:
+            times = np.array(ct)[rg == r]
+            count = len(times)
+            if count < 40:
+                continue
+            if r not in modal_crossover:
+                modal_crossover[r] = {"threshold": [], "crossover": [], "median": []}
+            mode = _get_mode(times)
+            modal_crossover[r]["threshold"].append(th)
+            modal_crossover[r]["crossover"].append(mode)
+            modal_crossover[r]["median"].append(np.median(times))
+
+
+    # plot data where it exists
+    plt.figure(figsize=(8, 10))
+    ax = plt.subplot(211) 
+    for rg in sorted(modal_crossover):
+        if modal_crossover[rg]:
+            ax.plot(modal_crossover[rg]["threshold"],
+                    modal_crossover[rg]["crossover"],
+                    label=f'Regime {rg}')
+
+    plt.xlim(0, 4.2)
+    plt.xlabel('Threshold (mm/h)')
+    plt.ylim(30, 390)
+    plt.ylabel('Modal skill crossover')
+    plt.legend()
+
+    ax = plt.subplot(212) 
+    for rg in sorted(modal_crossover):
+        if modal_crossover[rg]:
+            ax.plot(modal_crossover[rg]["threshold"],
+                    modal_crossover[rg]["median"],
+                    label=f'Regime {rg}')
+
+    plt.xlim(0, 4.2)
+    plt.xlabel('Threshold (mm/h)')
+    plt.ylim(30, 390)
+    plt.ylabel('Median skill crossover')
+    plt.legend()
+    
+    plt.tight_layout()
+
+    if savepath is not None:
+        plt.savefig(savepath)
+    else:
+        plt.show()
+    plt.close()
 

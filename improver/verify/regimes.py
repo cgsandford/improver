@@ -24,5 +24,5 @@ def gen_cluster_mapping(regimes):
 # regimes where nowcast performance is good / bad wrt UKV
 # derived from CRPS and meanerr timeseries at T+2
 GOOD_REGIMES = [5, 6, 24] # [4, 5, 9, 11, 19, 22, 24]
-BAD_REGIMES = [1, 8, 10] # [1, 2, 7, 10, 12, 20, 26]     
+BAD_REGIMES = [1, 8, 10] # [1, 2, 7, 10, 12, 20, 26]
 
