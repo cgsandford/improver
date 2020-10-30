@@ -4,44 +4,44 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-def plot_by_leadtime(stats_dicts, stat, thresholds, outname, one_model=True):
-    """Plots statistic "stat" by lead time"""
+def plot_by_leadtime(stats_dicts, stat, thresholds, outname, one_model=False):
+    """Plots statistic "stat" by lead time
+
+    Args:
+        stats_dicts (list of StatsDict):
+            List of stats from each model.  If one_model=True, only the first
+            item is plotted.
+        stat (string):
+            Name of statistic to be plotted.  Must match a key in StatsDict.
+        thresholds (list of float):
+            List of thresholds.  If one_model=False, only the first item is
+            plotted.
+        outname (str):
+            Full path to save output plot
+        one_model (bool):
+            If True, plot range of thresholds from one model on a single axis.
+            If False, plot one threshold from a range of models on a single axis.
+    """
+    plt.figure(figsize=(8, 6))
+
     if one_model:
-        _plot_by_leadtime_one_model(stats_dicts[0], stat, thresholds, outname)
+        title = f'{stat} with lead time'
+        for thresh in thresholds:
+            leadtime, skill = stats_dicts[0].trend_with_leadtime(thresh, stat)
+            plt.plot(leadtime, skill, label='{:.2f} mm/h'.format(thresh))
     else:
-        _plot_by_leadtime_one_threshold(stats_dicts, stat, thresholds[0], outname)
+        title = '{} at {:.2f} mm/h'.format(stat, thresholds[0])
+        for model in stats_dicts:
+            leadtime, skill = stats_dicts[model].trend_with_leadtime(thresholds[0], stat)
+            plt.plot(leadtime, skill, label=f'{model}')
 
-
-def _plot_by_leadtime_one_model(stats_dict, stat, thresholds, outname):
-    """Plots statistic "stat" by lead time for a range of thresholds"""
-    plt.figure(figsize=(8, 6))
-    for thresh in thresholds:
-        leadtime, skill = stats_dict.trend_with_leadtime(thresh, stat)
-        plt.plot(leadtime, skill, label='{:.2f} mm/h'.format(thresh))
     plt.legend()
     plt.xlabel('Lead time (minutes)')
     plt.xlim(left=0)
     plt.xticks(np.arange(0, leadtime[-1]+1, 60))
     plt.ylabel(stat)
     plt.ylim(0, 1)
-    plt.title(f'{stat} with lead time')
-    plt.tight_layout()
-    plt.savefig(outname)
-
-
-def _plot_by_leadtime_one_threshold(stats_dicts, stat, thresh, outname):
-    """Plots statistic "stat" by lead time for each model at a single threshold"""
-    plt.figure(figsize=(8, 6))
-    for model in stats_dicts:
-        leadtime, skill = stats_dicts[model].trend_with_leadtime(thresh, stat)
-        plt.plot(leadtime, skill, label=f'{model}')
-    plt.legend()
-    plt.xlabel('Lead time (minutes)')
-    plt.xlim(left=0)
-    plt.xticks(np.arange(0, leadtime[-1]+1, 60))
-    plt.ylabel(stat)
-    plt.ylim(0, 1)
-    plt.title('{} at {:.2f} mm/h'.format(stat, thresh))
+    plt.title(title)
     plt.tight_layout()
     plt.savefig(outname)
 
@@ -58,14 +58,48 @@ def _csi_contours(pod, sr):
     return csi
 
 
+def _annotate_4D_plot_points(plt, stm, model, leadtime):
+    """Annotate 4D plot points"""
+    offset = 0.015
+    if model == 'UKV':
+        # add value annotations
+        for x, y, t in zip(stm['SR'], stm['POD'], stm['thresholds']):
+            yoffset = -0.015 if t == 0.03 else offset
+            plt.text(x+offset, y-yoffset, f'{t:.2f} mm/h',
+                     horizontalalignment='left', verticalalignment='top')
+
+    if model == 'Optical flow' and leadtime <= 90:
+        # label all nowcast thresholds up to T+1.5
+        for x, y, t in zip(stm['SR'], stm['POD'], stm['thresholds']):
+            yoffset = 0.025 if t == 0.03 else offset
+            xoffset = 0 if t == 0.03 else offset
+            plt.text(x-xoffset, y+yoffset, f'{t:.2f} mm/h',
+                     horizontalalignment='right', verticalalignment='bottom')
+    elif model == 'Optical flow' and leadtime <= 150:
+        # label lower nowcast thresholds up to T+2.5
+        for x, y, t in zip(stm['SR'][:3], stm['POD'][:3], stm['thresholds'][:3]):
+            plt.text(x-offset, y+offset, f'{t:.2f} mm/h',
+                     horizontalalignment='right', verticalalignment='bottom')
+
+    if model == 'Optical flow' and leadtime >= 210:
+        # label moderate nowcast thresholds beyond T+3.5
+        for x, y, t in zip(stm['SR'][2:4], stm['POD'][2:4], stm['thresholds'][2:4]):
+            plt.text(x-offset, y+offset, f'{t:.2f} mm/h',
+                     horizontalalignment='right', verticalalignment='bottom')
+
+
 def make_4D_plot(stats_dicts, leadtime, outname):
     """Based on plots seen at EPS-SRNWP meeting.  Plot POD against FAR for each
     model, one point per threshold.  Show background contour shading of CSI."""
 
+    plot_markers = {}
+    marker_list = ['d', '*', 'o']
+
     plot_stats = {}
 
-    for model in stats_dicts:
+    for i, model in enumerate(stats_dicts):
         plot_stats[model] = {"thresholds": [], "POD": [], "SR": []}
+        plot_markers[model] = marker_list[i]
         for thresh in sorted(stats_dicts[model].data[leadtime]):
             plot_stats[model]["thresholds"].append(thresh)
             plot_stats[model]["POD"].append(stats_dicts[model].data[leadtime][thresh]['POD'])       
@@ -80,12 +114,14 @@ def make_4D_plot(stats_dicts, leadtime, outname):
     cbar.set_ticks(np.arange(0, 1.01, 0.1))
 
     for model in plot_stats:
-        plt.plot(plot_stats[model]['SR'], plot_stats[model]['POD'], label=model, marker='o')
+        plt.plot(plot_stats[model]['SR'], plot_stats[model]['POD'],
+                 label=model, marker=plot_markers[model])
+        _annotate_4D_plot_points(plt, plot_stats[model], model, leadtime)
 
     plt.xlabel('Success ratio')
     plt.ylabel('Hit rate')
     plt.legend()
-    
+    plt.title(f'Skill at T+{leadtime/60} hrs')
     plt.tight_layout()
 
     if outname is not None:
