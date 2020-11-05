@@ -130,8 +130,8 @@ def main(countfiles, regimes, plotdir, startdate, enddate):
     filespine = os.path.join(plotdir, f'{start}-{end}_{nc_name}')
     all_plots = ["crossover_time_csi", "crossover_time_regime", "hist_regime"]
 
-    make_plots(crossover, filespine, True, plots=all_plots[-1:])
-    make_plots(crossover, filespine, False, plots=all_plots[-1:])
+    make_plots(crossover, filespine, True, plots=all_plots)
+    make_plots(crossover, filespine, False, plots=all_plots)
 
 
     # groupings...
